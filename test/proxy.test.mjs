@@ -230,6 +230,36 @@ test("ignores a tool_result continuation mid-turn", () => {
   assert.equal(newTurnPrompt(body), null);
 });
 
+test("reads the prompt past trailing system messages from hooks", () => {
+  // Arrange
+  const body = withTools([
+    { role: "user", content: [{ type: "text", text: "fix the bug" }] },
+    { role: "system", content: [{ type: "text", text: "SessionStart hook additional context" }] },
+  ]);
+
+  // Act
+  const prompt = newTurnPrompt(body);
+
+  // Assert
+  assert.equal(prompt, "fix the bug");
+});
+
+test("ignores a tool_result continuation followed by a system message", () => {
+  // Arrange
+  const body = withTools([
+    { role: "user", content: "fix the bug" },
+    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] },
+    { role: "system", content: "reminder" },
+  ]);
+
+  // Act
+  const prompt = newTurnPrompt(body);
+
+  // Assert
+  assert.equal(prompt, null);
+});
+
 test("ignores auxiliary calls that carry no tools", () => {
   const body = { messages: [{ role: "user", content: "summarise this" }] };
   assert.equal(newTurnPrompt(body), null);

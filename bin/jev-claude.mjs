@@ -34,6 +34,9 @@ function autoModelEnv() {
   // ANTHROPIC_MODEL applies to this session only and is never written to settings, so the
   // default costs the user nothing permanent. A model they set themselves still wins.
   if (!process.env.ANTHROPIC_MODEL) env.ANTHROPIC_MODEL = AUTO_MODEL;
+  // Claude Code sizes an unknown model at 200k, which pins the context meter at 100% and
+  // compacts early on sessions the routed 1M-window tiers could still hold.
+  if (!process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS) env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = "1000000";
   return env;
 }
 
