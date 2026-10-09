@@ -1,0 +1,5 @@
+{
+  "name": "jev-router",
+  "version": "0.3.0",
+  "description": "Routes each Claude Code turn to the cheapest sufficient Claude model using TypeSafe Jev, in any surface that loads mods (terminal, Desktop, VS Code)"
+}
