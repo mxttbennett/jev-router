@@ -99,19 +99,30 @@ export function applyTier(body, tierName, model = idOf(tierName)) {
   return body;
 }
 
-/** Exact Claude models reported by the account, newest first; static ids are the cold-start fallback. */
+/** One model per tier, newest version wins; static ids are the cold-start fallback. */
 export function claudeModels(catalog = []) {
-  const models = catalog
-    .filter((model) => tierOf(model?.id))
-    .map((model) => ({
-      id: model.id,
-      tier: tierOf(model.id),
-      description: [
-        model.display_name,
-        model.created_at && `released ${model.created_at.slice(0, 10)}`,
-        model.max_input_tokens && `${model.max_input_tokens} input tokens`,
-      ].filter(Boolean).join("; "),
-    }));
+  const byTier = new Map();
+  for (const model of catalog) {
+    const tier = tierOf(model?.id);
+    if (!tier) continue;
+    const prev = byTier.get(tier);
+    // Prefer created_at, fall back to lexicographic ID (newer version numbers sort later)
+    const newer =
+      (model.created_at ?? "") > (prev?.created_at ?? "") ||
+      (!model.created_at && !prev?.created_at && model.id > (prev?.id ?? ""));
+    if (!prev || newer) {
+      byTier.set(tier, model);
+    }
+  }
+  const models = [...byTier.values()].map((model) => ({
+    id: model.id,
+    tier: tierOf(model.id),
+    description: [
+      model.display_name,
+      model.created_at && `released ${model.created_at.slice(0, 10)}`,
+      model.max_input_tokens && `${model.max_input_tokens} input tokens`,
+    ].filter(Boolean).join("; "),
+  }));
   return models.length
     ? models
     : TIERS.map((tier) => ({ id: tier.id, tier: tier.name, description: tier.id }));
@@ -242,6 +253,7 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
           } else {
             const key = conversationKey(body);
             const state = stateFor(key);
+            const firstTurn = state.tier === null;
             // What the prompt cache was built on, which is what a downgrade would discard.
             const current = state.tier ?? "opus";
             const prompt = newTurnPrompt(body);
@@ -264,6 +276,7 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
                 current,
                 available,
                 contextTokens,
+                firstTurn,
               });
               const model =
                 shouldUseExactModel(reason, chosen?.tier, tier)

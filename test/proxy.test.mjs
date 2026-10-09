@@ -81,20 +81,25 @@ test("recognises older model versions within a tier", () => {
   assert.equal(tierOf(undefined), null);
 });
 
-test("keeps available Claude model versions as separate Jev choices", () => {
+test("dedupes to one model per tier, newest wins", () => {
   assert.deepEqual(
     claudeModels([
-      { id: "claude-opus-5-5", display_name: "Claude Opus 5" },
-      { id: "claude-opus-4-8", display_name: "Claude Opus 4.8" },
+      { id: "claude-opus-4-8", display_name: "Claude Opus 4.8", created_at: "2026-08-01" },
+      { id: "claude-opus-5-5", display_name: "Claude Opus 5", created_at: "2026-10-01" },
     ]).map(({ id, tier }) => ({ id, tier })),
-    [
-      { id: "claude-opus-5-5", tier: "opus" },
-      { id: "claude-opus-4-8", tier: "opus" },
-    ],
+    [{ id: "claude-opus-5-5", tier: "opus" }],
+  );
+  // Without created_at, later entry wins (insertion order)
+  assert.deepEqual(
+    claudeModels([
+      { id: "claude-sonnet-4-6", display_name: "Sonnet 4.6" },
+      { id: "claude-sonnet-5-5", display_name: "Sonnet 5" },
+    ]).map(({ id, tier }) => ({ id, tier })),
+    [{ id: "claude-sonnet-5-5", tier: "sonnet" }],
   );
 });
 
-test("Claude proxy sends exact account models to Jev and routes the chosen version", async (t) => {
+test("Claude proxy dedupes to newest model per tier and routes the chosen version", async (t) => {
   const seen = [];
   const upstream = http.createServer((req, res) => {
     const chunks = [];
@@ -104,15 +109,15 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({
           data: [
-            { id: "claude-opus-5-5", display_name: "Claude Opus 5" },
-            { id: "claude-opus-4-8", display_name: "Claude Opus 4.8" },
-            { id: "claude-sonnet-5-5", display_name: "Claude Sonnet 5" },
+            { id: "claude-opus-4-8", display_name: "Claude Opus 4.8", created_at: "2026-08-01" },
+            { id: "claude-opus-5-5", display_name: "Claude Opus 5", created_at: "2026-10-01" },
+            { id: "claude-sonnet-5-5", display_name: "Claude Sonnet 5", created_at: "2026-10-01" },
           ],
         }));
       }
       seen.push(JSON.parse(Buffer.concat(chunks)));
       res.setHeader("content-type", "application/json");
-      res.end('{"id":"msg_1","type":"message","model":"claude-opus-4-8"}');
+      res.end('{"id":"msg_1","type":"message","model":"claude-opus-5-5"}');
     });
   });
   await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
@@ -121,12 +126,12 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
   const { port, close } = await startProxy({
     upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
     route: async ({ models }) => {
-      assert.deepEqual(models.map((model) => model.id), [
+      // Only newest per tier: opus-5-5 wins over opus-4-8
+      assert.deepEqual(models.map((model) => model.id).sort(), [
         "claude-opus-5-5",
-        "claude-opus-4-8",
         "claude-sonnet-5-5",
       ]);
-      return { choice: "claude-opus-4-8", confidence: 0.91, ms: 1 };
+      return { choice: "claude-opus-5-5", confidence: 0.91, ms: 1 };
     },
   });
   t.after(close);
@@ -142,7 +147,52 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
     }),
   });
 
-  assert.equal(seen[0].model, "claude-opus-4-8");
+  assert.equal(seen[0].model, "claude-opus-5-5");
+});
+
+test("the first turn downgrades even when startup context exceeds the cache guard", async (t) => {
+  // Arrange
+  const seen = [];
+  const upstream = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url.startsWith("/v1/models")) {
+        return res.end(JSON.stringify({
+          data: [
+            { id: "claude-opus-5-5", display_name: "Claude Opus 5" },
+            { id: "claude-haiku-5-5", display_name: "Claude Haiku 5" },
+          ],
+        }));
+      }
+      seen.push(JSON.parse(Buffer.concat(chunks)));
+      res.end('{"id":"msg_1","type":"message","model":"claude-haiku-5-5"}');
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+
+  const { port, close } = await startProxy({
+    upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
+    route: async () => ({ choice: "claude-haiku-5-5", confidence: 0.9, ms: 1 }),
+  });
+  t.after(close);
+  const startupContext = "x".repeat(120_000);
+
+  // Act
+  await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "jev-router",
+      tools: [{ name: "Bash" }],
+      messages: [{ role: "user", content: `${startupContext}\nwhats 1 + 1 ${process.pid}` }],
+    }),
+  });
+
+  // Assert
+  assert.equal(seen[0].model, "claude-haiku-5-5");
 });
 
 test("a routed request without metadata is recorded under the conversation key", async (t) => {
