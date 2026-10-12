@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { availableModels, chooseModel, jevCall, parseEnvFile, tierOfModel } from './route'
+import { availableModels, chooseModel, jevCall, parseEnvFile, tierOfModel, withHistory } from './route'
 
 const answers = (choice: string, confidence = 0.9) => ({
   model: { choice, confidence },
@@ -126,5 +126,38 @@ describe('tierOfModel', () => {
     // Act & Assert
     expect(tierOfModel('claude-sonnet-5-5[1m]')).toBe('sonnet')
     expect(tierOfModel('Opus 5.5')).toBe('opus')
+  })
+})
+
+describe('withHistory', () => {
+  test('keeps the latest entry on top and appends it to the history', async () => {
+    // Arrange
+    const first = { tier: 'opus', model: 'claude-opus-5-5', reason: 'jev', confidence: 0.9, at: 1 }
+    const second = { tier: 'haiku', model: 'claude-haiku-5-5', reason: 'jev', confidence: 0.8, at: 2 }
+
+    // Act
+    const status = withHistory(JSON.stringify(withHistory(undefined, first)), second)
+
+    // Assert
+    expect(status.model).toBe('claude-haiku-5-5')
+    expect(status.history.map(entry => entry.at)).toEqual([1, 2])
+  })
+
+  test('caps the history at 20 entries', async () => {
+    // Arrange
+    const previous = JSON.stringify({ history: Array.from({ length: 20 }, (_, i) => ({ manual: true, at: i })) })
+
+    // Act
+    const status = withHistory(previous, { manual: true, at: 20 })
+
+    // Assert
+    expect(status.history).toHaveLength(20)
+    expect(status.history[0].at).toBe(1)
+  })
+
+  test('starts a new history when the old file is missing or unreadable', async () => {
+    // Act & Assert
+    expect(withHistory('not json', { manual: true, at: 5 }).history).toEqual([{ manual: true, at: 5 }])
+    expect(withHistory('{"tier":"opus"}', { manual: true, at: 6 }).history).toHaveLength(1)
   })
 })

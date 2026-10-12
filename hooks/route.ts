@@ -9,6 +9,21 @@ export type JevCall = { url: string; headers: Record<string, string>; body: stri
 export type Decision = { tier: string; model: string; reason: string; confidence: number | null }
 
 const TYPESAFE_URL = 'https://api.typesafe.ai'
+const HISTORY_LIMIT = 20
+
+export type StatusEntry = { at: number } & (Decision | { manual: true })
+
+/** The status file's next contents: the latest entry on top, plus the recent ones it replaced. */
+export function withHistory(previousFile: string | undefined, entry: StatusEntry) {
+  let history: StatusEntry[] = []
+  try {
+    const previous = JSON.parse(previousFile ?? '') as { history?: StatusEntry[] }
+    history = Array.isArray(previous.history) ? previous.history : []
+  } catch {
+    // A missing or unreadable file starts a fresh history.
+  }
+  return { ...entry, history: [...history, entry].slice(-HISTORY_LIMIT) }
+}
 
 export function parseEnvFile(text: string): Vars {
   const vars: Vars = {}

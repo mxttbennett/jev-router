@@ -9,6 +9,7 @@ import {
   jevCall,
   parseEnvFile,
   tierOfModel,
+  withHistory,
   type Decision,
   type Vars,
 } from './route'
@@ -65,11 +66,13 @@ async function isEnabled($: EngineInterface) {
   return !isUnderJevClaude && (await $.store.get('enabled')) !== false
 }
 
-async function publish($: EngineInterface, status: object) {
+async function publish($: EngineInterface, status: Decision | { manual: true }) {
   try {
     const tmp = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/+$/, '')
     const id = (await $.session.id()).replace(/[^\w-]/g, '')
-    await $.fs.write(`${tmp}/jev-claude/${id}.json`, JSON.stringify({ ...status, at: await $.clock.now() }))
+    const file = `${tmp}/jev-claude/${id}.json`
+    const previous = await $.fs.read(file).catch(() => undefined)
+    await $.fs.write(file, JSON.stringify(withHistory(previous, { ...status, at: await $.clock.now() })))
   } catch {
     // The status line is cosmetic and must never interfere with a turn.
   }
