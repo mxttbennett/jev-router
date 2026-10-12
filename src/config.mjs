@@ -52,10 +52,10 @@ export const THRESHOLDS = {
   uncertainCeiling: "sonnet",
   /**
    * Switching models invalidates the prompt cache; the next turn re-sends the whole
-   * conversation. Measured at ~23.6k cache-creation tokens switching into Opus, so a
-   * downgrade only pays off while the conversation is still small.
+   * conversation. Measured at ~23.6k cache-creation tokens switching into Opus. Sessions
+   * start near 90k from injected context, so the cap sits well above that baseline.
    */
-  downgradeMaxContextTokens: 20000,
+  downgradeMaxContextTokens: 150000,
   /**
    * Per-attempt Jev HTTP timeout and the hard wall-clock deadline for the whole routing
    * call. Measured: ~300-350ms warm, ~900-1000ms on the first call (TLS handshake), so the
