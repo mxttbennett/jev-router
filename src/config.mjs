@@ -1,5 +1,4 @@
 // Every routing decision knob lives here, so the whole policy is reviewable in one file.
-import { choice, score } from "@typesafe-ai/sdk";
 
 /**
  * Model tiers, cheapest first. `id` is what goes into the API request body; `family` is the
@@ -67,6 +66,10 @@ export const THRESHOLDS = {
   jevDeadlineMs: 3000,
   jevMaxRetries: 1,
 };
+
+// The SDK's question builders, inlined so this file loads where npm packages cannot (the mod).
+const score = (instructions, criteria) => ({ type: "score", instructions, criteria });
+const choice = (instructions, criteria) => ({ type: "choice", instructions, criteria });
 
 export const CONTEXT_WINDOW_TOKENS = 200000;
 
