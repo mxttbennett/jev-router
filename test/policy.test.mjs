@@ -64,7 +64,7 @@ test("still allows a confident upgrade to fable", () => {
 });
 
 test("refuses a downgrade once the cache rebuild costs more than it saves", () => {
-  const out = decide({ ...base, current: "opus", jev: sure("haiku"), contextTokens: 80000 });
+  const out = decide({ ...base, current: "opus", jev: sure("haiku"), contextTokens: 200000 });
   assert.equal(out.tier, "opus");
   assert.match(out.reason, /cache-rebuild/);
 });
