@@ -221,7 +221,8 @@ One Jev call per fresh user turn selects a shared abstract tier:
 - low confidence never downgrades and caps upgrades at the balanced tier;
 - large conversations refuse downgrades that would waste more prompt-cache work than they save;
 - unavailable tiers step upward rather than silently choosing a weaker model;
-- the long tier is disabled unless `JEV_ALLOW_FABLE=1`.
+- the long tier is disabled unless `JEV_ALLOW_FABLE=1`;
+- `JEV_ALLOWED_TIERS=haiku,sonnet` restricts routing to the listed tiers, and a choice outside them moves to the nearest allowed tier.
 
 Tool-loop continuations keep the tier chosen at the start of the turn. Main conversations and
 sub-agents are pinned separately. Routing is fail-open: Jev failure never blocks the CLI.
@@ -236,6 +237,7 @@ sub-agents are pinned separately. Routing is fail-open: Jev failure never blocks
 | `JEV_OPENROUTER_MODEL` | Both | OpenRouter model id; defaults to `typesafe/jev-1.13`. |
 | `JEV_OPENROUTER_URL` | Both | OpenRouter decisions endpoint; defaults to `https://openrouter.ai/api/alpha/decisions`. |
 | `JEV_ALLOW_FABLE` | Both | Enables the opt-in long tier. |
+| `JEV_ALLOWED_TIERS` | Both | Comma-separated tiers to route between, such as `haiku,sonnet`; defaults to every tier. |
 | `JEV_DEBUG` | Both | Logs decisions and rewrites to `~/.jev-claude.log` in interactive sessions. |
 | `JEV_DUMP` | Both | Dumps request bodies for debugging wire-format changes. |
 | `JEV_NO_STATUSLINE` | Claude | Disables the injected Claude status line. |

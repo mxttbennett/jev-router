@@ -56,6 +56,11 @@ describe('availableModels', () => {
     expect(availableModels({}).map(m => m.tier)).toEqual(['haiku', 'sonnet', 'opus'])
     expect(availableModels({ JEV_ALLOW_FABLE: '1' }).map(m => m.tier)).toContain('fable')
   })
+
+  test('limits models to the tiers named in JEV_ALLOWED_TIERS', async () => {
+    // Act & Assert
+    expect(availableModels({ JEV_ALLOWED_TIERS: 'haiku,sonnet' }).map(m => m.tier)).toEqual(['haiku', 'sonnet'])
+  })
 })
 
 describe('chooseModel', () => {

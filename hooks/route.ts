@@ -1,4 +1,4 @@
-import { TIERS, THRESHOLDS, shouldUseExactModel, tierOf } from '../src/config.mjs'
+import { TIERS, THRESHOLDS, availableTiers, shouldUseExactModel, tierOf } from '../src/config.mjs'
 import { buildJevRequest, readJevAnswers } from '../src/jev-request.mjs'
 import { decide } from '../src/policy.mjs'
 import { OPENROUTER_MODEL, OPENROUTER_URL, resolveJevProvider } from '../src/provider.mjs'
@@ -38,7 +38,8 @@ export function parseEnvFile(text: string): Vars {
 }
 
 export function availableModels(vars: Vars): Model[] {
-  return TIERS.filter(t => t.name !== 'fable' || vars.JEV_ALLOW_FABLE === '1').map(t => ({
+  const tiers = availableTiers(vars)
+  return TIERS.filter(t => tiers.includes(t.name)).map(t => ({
     id: t.id,
     tier: t.name,
     description: t.id,

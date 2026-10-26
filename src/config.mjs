@@ -37,12 +37,16 @@ export const isAuto = (model) => model === AUTO_MODEL;
 export const tierOf = (model) =>
   TIERS.find((t) => typeof model === "string" && model.includes(t.family))?.name ?? null;
 
-/**
- * Fable bills extra usage credits, so it is opt-in. Everything else is covered by a normal
- * subscription.
- */
-export const availableTiers = () =>
-  TIER_NAMES.filter((n) => n !== "fable" || process.env.JEV_ALLOW_FABLE === "1");
+/** Tiers the account may route to. JEV_ALLOWED_TIERS narrows the list; fable stays opt-in because it bills extra credits. */
+export const availableTiers = (env = process.env) => {
+  const named = (env.JEV_ALLOWED_TIERS ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => TIER_NAMES.includes(name));
+  return TIER_NAMES.filter(
+    (n) => (named.length === 0 || named.includes(n)) && (n !== "fable" || env.JEV_ALLOW_FABLE === "1"),
+  );
+};
 
 export const THRESHOLDS = {
   /** Below this Jev confidence we refuse to downgrade and cap upgrades at `uncertainCeiling`. */

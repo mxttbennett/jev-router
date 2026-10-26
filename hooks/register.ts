@@ -22,6 +22,7 @@ const ENV_NAMES = [
   'JEV_OPENROUTER_URL',
   'JEV_OPENROUTER_MODEL',
   'JEV_ALLOW_FABLE',
+  'JEV_ALLOWED_TIERS',
   'TYPESAFE_BASE_URL',
   'TYPESAFE_DEFAULT_MODEL',
 ] as const
@@ -44,6 +45,7 @@ async function loadVars($: EngineInterface): Promise<Vars> {
     JEV_OPENROUTER_URL: await $.env.get('JEV_OPENROUTER_URL'),
     JEV_OPENROUTER_MODEL: await $.env.get('JEV_OPENROUTER_MODEL'),
     JEV_ALLOW_FABLE: await $.env.get('JEV_ALLOW_FABLE'),
+    JEV_ALLOWED_TIERS: await $.env.get('JEV_ALLOWED_TIERS'),
     TYPESAFE_BASE_URL: await $.env.get('TYPESAFE_BASE_URL'),
     TYPESAFE_DEFAULT_MODEL: await $.env.get('TYPESAFE_DEFAULT_MODEL'),
   }
