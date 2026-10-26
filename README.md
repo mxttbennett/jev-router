@@ -137,6 +137,31 @@ may also remove them during normal temporary-file cleanup.
 > Choosing a model with `Enter` can save it as Claude Code's default. `jev-claude` restores
 > the previous default on exit so `jev-router` cannot break plain `claude`.
 
+## Claude Code mod (Desktop, VS Code, terminal)
+
+`jev-claude` only routes sessions it launches. The repository is also a Claude Code mod that
+routes from inside Claude Code, so it works anywhere Claude Code loads mods, including the
+Claude Desktop app and the VS Code extension. It needs no proxy and no `ANTHROPIC_BASE_URL`.
+
+1. Clone this repository.
+2. Add the clone to the `env` block of `~/.claude/settings.json`:
+
+   ```json
+   "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/jev-router" }
+   ```
+
+3. Put `JEV_API_KEY` or `OPENROUTER_API_KEY` in `~/.jev-router.env`.
+4. Restart Claude Desktop, or start a new `claude` session.
+
+The mod asks Jev once per prompt, then sends every request of that turn to the chosen model
+with the same policy as the proxy. Run `/jev off` to stop routing and `/jev on` to resume;
+choosing a model with `/model` also stops routing for that session. Each decision is written
+to the same status file the proxy writes, so a status line that reads it keeps working.
+
+Differences from `jev-claude`: subagents keep the model they were given, the model list is
+the static one in `src/config.mjs` rather than the account's catalogue, and a project `.env`
+is not read. The mod stands down in sessions `jev-claude` started, so the proxy routes those.
+
 ## OpenAI Codex interface
 
 ![Jev Router in the OpenAI Codex model picker](docs/codex-model-picker.png)
@@ -196,7 +221,8 @@ One Jev call per fresh user turn selects a shared abstract tier:
 - low confidence never downgrades and caps upgrades at the balanced tier;
 - large conversations refuse downgrades that would waste more prompt-cache work than they save;
 - unavailable tiers step upward rather than silently choosing a weaker model;
-- the long tier is disabled unless `JEV_ALLOW_FABLE=1`.
+- the long tier is disabled unless `JEV_ALLOW_FABLE=1`;
+- `JEV_ALLOWED_TIERS=haiku,sonnet` restricts routing to the listed tiers, and a choice outside them moves to the nearest allowed tier.
 
 Tool-loop continuations keep the tier chosen at the start of the turn. Main conversations and
 sub-agents are pinned separately. Routing is fail-open: Jev failure never blocks the CLI.
@@ -211,6 +237,7 @@ sub-agents are pinned separately. Routing is fail-open: Jev failure never blocks
 | `JEV_OPENROUTER_MODEL` | Both | OpenRouter model id; defaults to `typesafe/jev-1.13`. |
 | `JEV_OPENROUTER_URL` | Both | OpenRouter decisions endpoint; defaults to `https://openrouter.ai/api/alpha/decisions`. |
 | `JEV_ALLOW_FABLE` | Both | Enables the opt-in long tier. |
+| `JEV_ALLOWED_TIERS` | Both | Comma-separated tiers to route between, such as `haiku,sonnet`; defaults to every tier. |
 | `JEV_DEBUG` | Both | Logs decisions and rewrites to `~/.jev-claude.log` in interactive sessions. |
 | `JEV_DUMP` | Both | Dumps request bodies for debugging wire-format changes. |
 | `JEV_NO_STATUSLINE` | Claude | Disables the injected Claude status line. |

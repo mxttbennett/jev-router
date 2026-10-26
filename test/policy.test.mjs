@@ -88,3 +88,25 @@ test("accepts exact model changes within the same tier", () => {
   assert.equal(shouldUseExactModel("jev/no-change", "opus", "opus"), true);
   assert.equal(shouldUseExactModel("low-confidence-no-downgrade/no-change", "opus", "opus"), false);
 });
+
+test("a tier above the allowed range steps down to the highest allowed tier", () => {
+  // Arrange
+  const available = ["haiku", "sonnet"];
+
+  // Act
+  const out = decide({ ...base, current: "haiku", available, jev: sure("opus") });
+
+  // Assert
+  assert.equal(out.tier, "sonnet");
+});
+
+test("a tier below the allowed range steps up to the lowest allowed tier", () => {
+  // Arrange
+  const available = ["sonnet", "opus"];
+
+  // Act
+  const out = decide({ ...base, current: "sonnet", available, jev: sure("haiku") });
+
+  // Assert
+  assert.equal(out.tier, "sonnet");
+});
