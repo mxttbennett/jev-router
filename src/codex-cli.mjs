@@ -4,23 +4,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODEX_AUTO_MODEL, startCodexProxy } from "./codex-proxy.mjs";
-import { codexRoutingEnabled } from "./codex-routing.mjs";
 import { describeMissingJev, resolveJevProvider } from "./jev-client.mjs";
 
 const PROVIDER = "jev";
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const EXPLAIN_SKILL = join(ROOT, "skills", "codex", "jev-explain", "SKILL.md");
-const TOGGLE_SKILL = join(ROOT, "skills", "codex", "jev-codex", "SKILL.md");
-const TOGGLE_SCRIPT = join(ROOT, "src", "codex-routing.mjs");
 
 export function installCodexSkill(home = homedir()) {
   const target = join(home, ".agents", "skills", "jev-router-explain", "SKILL.md");
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(EXPLAIN_SKILL, target);
-  const toggleDir = join(home, ".agents", "skills", "jev-codex");
-  mkdirSync(toggleDir, { recursive: true });
-  copyFileSync(TOGGLE_SKILL, join(toggleDir, "SKILL.md"));
-  copyFileSync(TOGGLE_SCRIPT, join(toggleDir, "toggle.mjs"));
   return target;
 }
 
@@ -84,7 +77,7 @@ export async function runCodex() {
   try {
     installCodexSkill();
   } catch (err) {
-    process.stderr.write(`[jev] could not install the Codex skills: ${err.message}\n`);
+    process.stderr.write(`[jev] could not install the Codex explanation skill: ${err.message}\n`);
   }
   const command = resolveCodex();
   if (!command) {
@@ -105,9 +98,6 @@ export async function runCodex() {
     const proxy = await startCodexProxy({ statusId });
     close = proxy.close;
     args = codexArgs(`http://127.0.0.1:${proxy.port}`, args);
-    if (!codexRoutingEnabled()) {
-      process.stderr.write("[jev] routing is paused; use $jev-codex on to resume\n");
-    }
   } else {
     process.stderr.write(
       `[jev] ${describeMissingJev()} - starting Codex without routing\n` +
