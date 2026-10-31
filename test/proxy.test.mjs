@@ -21,7 +21,7 @@ test("only the sentinel model is routed", () => {
 test("the sentinel is not mistaken for a real tier", () => {
   assert.equal(tierOf("jev-router"), null);
 });
-import { tierOf, isAuto } from "../src/config.mjs";
+import { tierOf, isAuto, availableTiers, idOf } from "../src/config.mjs";
 import { writeDecision, writeStatus, readStatus, pruneStale, STATUS_DIR } from "../src/status.mjs";
 import { mkdirSync, statSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -81,20 +81,7 @@ test("recognises older model versions within a tier", () => {
   assert.equal(tierOf(undefined), null);
 });
 
-test("keeps available Claude model versions as separate Jev choices", () => {
-  assert.deepEqual(
-    claudeModels([
-      { id: "claude-opus-5-5", display_name: "Claude Opus 5" },
-      { id: "claude-opus-4-8", display_name: "Claude Opus 4.8" },
-    ]).map(({ id, tier }) => ({ id, tier })),
-    [
-      { id: "claude-opus-5-5", tier: "opus" },
-      { id: "claude-opus-4-8", tier: "opus" },
-    ],
-  );
-});
-
-test("Claude proxy sends exact account models to Jev and routes the chosen version", async (t) => {
+test("Claude proxy offers Jev the newest account model per tier and routes the chosen one", async (t) => {
   const seen = [];
   const upstream = http.createServer((req, res) => {
     const chunks = [];
@@ -123,10 +110,9 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
     route: async ({ models }) => {
       assert.deepEqual(models.map((model) => model.id), [
         "claude-opus-5-5",
-        "claude-opus-4-8",
         "claude-sonnet-5-5",
       ]);
-      return { choice: "claude-opus-4-8", confidence: 0.91, ms: 1 };
+      return { choice: "claude-sonnet-5-5", confidence: 0.91, ms: 1 };
     },
   });
   t.after(close);
@@ -142,7 +128,76 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
     }),
   });
 
-  assert.equal(seen[0].model, "claude-opus-4-8");
+  assert.equal(seen[0].model, "claude-sonnet-5-5");
+});
+
+test("claudeModels keeps only the newest model in each tier", () => {
+  // Arrange
+  const catalog = [
+    { id: "claude-opus-4-8", created_at: "2026-02-01T00:00:00Z" },
+    { id: "claude-opus-5-5", created_at: "2026-09-01T00:00:00Z" },
+    { id: "claude-opus-5", created_at: "2026-05-01T00:00:00Z" },
+    { id: "claude-haiku-5-5", created_at: "2026-09-01T00:00:00Z" },
+    { id: "claude-haiku-4-5-20251001", created_at: "2025-10-01T00:00:00Z" },
+  ];
+
+  // Act
+  const models = claudeModels(catalog);
+
+  // Assert
+  assert.deepEqual(models.map((model) => [model.id, model.tier]), [
+    ["claude-opus-5-5", "opus"],
+    ["claude-haiku-5-5", "haiku"],
+  ]);
+});
+
+test("a failed catalog fetch falls back to static ids and retries on the next turn", async (t) => {
+  // Arrange
+  const seen = [];
+  let catalogCalls = 0;
+  const upstream = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url.startsWith("/v1/models")) {
+        if (++catalogCalls === 1) {
+          res.statusCode = 401;
+          return res.end('{"type":"error","error":{"type":"authentication_error"}}');
+        }
+        return res.end(JSON.stringify({ data: [{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5" }] }));
+      }
+      seen.push(JSON.parse(Buffer.concat(chunks)));
+      res.end('{"id":"msg_1","type":"message"}');
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+  const offered = [];
+  const { port, close } = await startProxy({
+    upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
+    route: async ({ models }) => {
+      offered.push(models.map((model) => model.id));
+      return { choice: models.find((model) => model.tier === "opus").id, confidence: 0.91, ms: 1 };
+    },
+  });
+  t.after(close);
+  const turn = (content) =>
+    fetch(`http://127.0.0.1:${port}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "test-key" },
+      body: JSON.stringify({ model: "jev-router", tools: [{ name: "Bash" }], messages: [{ role: "user", content }] }),
+    });
+
+  // Act
+  await turn(`first turn ${process.pid}`);
+  await turn(`second turn ${process.pid}`);
+
+  // Assert
+  assert.equal(catalogCalls, 2);
+  assert.deepEqual(offered[0], availableTiers().map(idOf));
+  assert.deepEqual(offered[1], ["claude-opus-5-5"]);
+  assert.deepEqual(seen.map((body) => body.model), [idOf("opus"), "claude-opus-5-5"]);
 });
 
 test("a routed request without metadata is recorded under the conversation key", async (t) => {

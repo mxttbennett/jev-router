@@ -155,7 +155,7 @@ export const questionForModels = (models) =>
   choice(
     [
       "Pick the cheapest exact model that can fully complete this coding request in one pass, without retrying on a stronger model.",
-      "Treat different model versions as separate choices. Judge required reasoning, not requested reply length.",
+      "Judge required reasoning, not requested reply length.",
     ],
     Object.fromEntries(
       models.map(({ id, tier, description }) => [
