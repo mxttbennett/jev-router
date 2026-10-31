@@ -12,7 +12,6 @@
   "bin": {
     "jev-claude": "bin/jev-claude.mjs",
     "jev-codex": "bin/jev-codex.mjs",
-    "jev-codex-toggle": "bin/jev-codex-toggle.mjs",
     "jev-explain": "bin/jev-explain.mjs",
     "jev-tiers": "bin/jev-tiers.mjs"
   },

@@ -23,7 +23,6 @@ const decision = (reason = "") => {
 
 export function formatExplanation(status) {
   if (!status) return "Jev Router: no routing decision has been recorded for this session.";
-  if (status.paused) return "Jev Router: routing is paused; use $jev-codex on to resume.";
   if (status.manual) return "Jev Router: routing is paused because you selected a model manually.";
 
   const m = status.metrics ?? {};

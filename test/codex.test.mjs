@@ -35,13 +35,11 @@ test("installs the bundled explanation skill for Codex", (t) => {
   assert.match(readFileSync(target, "utf8"), /name: jev-explain/);
 });
 
-test("installs the routing toggle and tiers skills for Codex", (t) => {
+test("installs the tiers skill for Codex", (t) => {
   const home = mkdtempSync(join(tmpdir(), "jev-codex-skill-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   installCodexSkill(home);
   const skills = join(home, ".agents", "skills");
-  assert.match(readFileSync(join(skills, "jev-codex", "SKILL.md"), "utf8"), /name: jev-codex/);
-  assert.match(readFileSync(join(skills, "jev-codex", "toggle.mjs"), "utf8"), /runCodexRoutingCommand/);
   const tiers = readFileSync(join(skills, "jev-tiers", "SKILL.md"), "utf8");
   assert.match(tiers, /name: jev-tiers/);
   assert.doesNotMatch(tiers, /\{\{ROOT\}\}/);

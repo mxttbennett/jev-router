@@ -153,10 +153,7 @@ Each fresh decision appears as Codex commentary:
 `jev-codex` installs or refreshes the packaged `$jev-explain` skill when it starts, so it is
 available from any repository without separate setup.
 
-It also installs `$jev-codex` and `$jev-tiers`. `$jev-codex off` pauses routing, `$jev-codex on`
-resumes it, and `$jev-codex status` shows the setting, which `~/.jev-router-codex` stores for every
-`jev-codex` session. While paused, prompts stay on the session's last routed model, or on the
-strong tier in a new session. From a terminal, run `jev-codex-toggle on|off|status`.
+It also installs `$jev-tiers`, described under [Choosing tiers](#choosing-tiers).
 
 Codex's footer shows `jev-router` because it displays the selected picker entry,
 not the model chosen behind that provider. If Jev is unavailable, the commentary names the
