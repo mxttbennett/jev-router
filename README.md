@@ -153,9 +153,25 @@ Each fresh decision appears as Codex commentary:
 `jev-codex` installs or refreshes the packaged `$jev-explain` skill when it starts, so it is
 available from any repository without separate setup.
 
+It also installs `$jev-codex` and `$jev-tiers`. `$jev-codex off` pauses routing, `$jev-codex on`
+resumes it, and `$jev-codex status` shows the setting, which `~/.jev-router-codex` stores for every
+`jev-codex` session. While paused, prompts stay on the session's last routed model, or on the
+strong tier in a new session. From a terminal, run `jev-codex-toggle on|off|status`.
+
 Codex's footer shows `jev-router` because it displays the selected picker entry,
 not the model chosen behind that provider. If Jev is unavailable, the commentary names the
 fallback model and explains how to set `JEV_API_KEY`.
+
+## Choosing tiers
+
+`/jev-tiers haiku,sonnet` in `jev-claude`, or `$jev-tiers haiku,sonnet` in `jev-codex`, limits
+which tiers Jev may route to. A choice outside the list moves to the nearest allowed tier. Run
+`/jev-tiers reset` to clear the list, or `/jev-tiers` alone to show it. From a terminal, run
+`jev-tiers [tiers|reset]`.
+
+The list is saved in `~/.jev-router-tiers` and applies to every session on the next prompt. It
+wins over `JEV_ALLOWED_TIERS`, which takes the same comma-separated list. The long tier still
+needs `JEV_ALLOW_FABLE=1`.
 
 ## How it works
 
@@ -206,6 +222,7 @@ sub-agents are pinned separately. Routing is fail-open: Jev failure never blocks
 | --- | --- | --- |
 | `JEV_API_KEY` | Both | Enables routing. `TYPESAFE_API_KEY` also works. |
 | `JEV_ALLOW_FABLE` | Both | Enables the opt-in long tier. |
+| `JEV_ALLOWED_TIERS` | Both | Comma-separated tiers to route between, such as `haiku,sonnet`; defaults to every tier. A list saved by `/jev-tiers` wins. |
 | `JEV_DEBUG` | Both | Logs decisions and rewrites to `~/.jev-claude.log` in interactive sessions. |
 | `JEV_DUMP` | Both | Dumps request bodies for debugging wire-format changes. |
 | `JEV_NO_STATUSLINE` | Claude | Disables the injected Claude status line. |

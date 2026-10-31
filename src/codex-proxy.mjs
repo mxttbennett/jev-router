@@ -7,6 +7,7 @@ import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
 import { log } from "./log.mjs";
 import { writeDecision, writeStatus } from "./status.mjs";
+import { codexRoutingEnabled } from "./codex-routing.mjs";
 
 const CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/codex";
 const API_BASE_URL = "https://api.openai.com/v1";
@@ -197,7 +198,12 @@ export async function startCodexProxy({
             const explaining = prompt?.includes("<jev-explain>") || /^\$jev-explain\b/i.test(prompt ?? "");
             let tier = current;
             let model = currentModel;
-            if (prompt && !explaining) {
+            if (prompt && !explaining && !codexRoutingEnabled()) {
+              model = states.get(key)?.model ?? modelForTier(candidates, "opus");
+              tier = codexTierOf(model) ?? "opus";
+              writeStatus(statusId, { manual: true, paused: true, model, at: Date.now() });
+              debug(`${key} routing paused at ${model} | ${prompt.slice(0, 60)}`);
+            } else if (prompt && !explaining) {
               const contextTokens = Math.round(JSON.stringify(body.input).length / 4);
               const jev = await route({ prompt, current: currentModel, contextTokens, models: candidates });
               const chosen = candidates.find((candidate) => candidate.id === jev?.choice);
