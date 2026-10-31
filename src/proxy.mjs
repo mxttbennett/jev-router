@@ -99,10 +99,16 @@ export function applyTier(body, tierName, model = idOf(tierName)) {
   return body;
 }
 
-/** Exact Claude models reported by the account, newest first; static ids are the cold-start fallback. */
+/**
+ * The newest Claude model the account reports in each tier; static ids are the cold-start
+ * fallback. Older versions are dropped rather than offered, since Jev would otherwise route to them.
+ */
 export function claudeModels(catalog = []) {
+  const seen = new Set();
   const models = catalog
     .filter((model) => tierOf(model?.id))
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+    .filter((model) => !seen.has(tierOf(model.id)) && seen.add(tierOf(model.id)))
     .map((model) => ({
       id: model.id,
       tier: tierOf(model.id),
@@ -176,8 +182,8 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
   const catalog = new Map();
 
   // Claude Code only asks for /v1/models when something needs the list, which can be never,
-  // so without this the static ids route the whole session. Fetched once, off the first
-  // request's own credentials; a failure just leaves the static ids in place.
+  // so without this the static ids route the whole session. Fetched off the first request's
+  // own credentials; a failure keeps the static ids for that turn and retries on the next.
   let catalogFetch = null;
   const ensureCatalog = (reqHeaders) => {
     if (catalog.size) return Promise.resolve();
@@ -199,7 +205,7 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
       } catch (err) {
         debug(`catalog fetch failed, using static ids: ${err.message}`);
       }
-    })();
+    })().finally(() => (catalogFetch = null));
     return catalogFetch;
   };
   const stateFor = (key) => {
