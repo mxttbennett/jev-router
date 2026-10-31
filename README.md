@@ -155,9 +155,7 @@ Claude Desktop app and the VS Code extension. It needs no proxy and no `ANTHROPI
 
 The mod asks Jev once per prompt, then sends every request of that turn to the chosen model
 with the same policy as the proxy. Run `/jev off` to stop routing and `/jev on` to resume;
-choosing a model with `/model` also stops routing for that session. Run `/jev-tiers haiku,sonnet,opus`
-to change the tiers Jev may route to for every session, `/jev-tiers reset` to fall back to
-`JEV_ALLOWED_TIERS`, and `/jev-tiers` alone to see the current list; a stored list wins over the variable. Each decision is written
+choosing a model with `/model` also stops routing for that session. Each decision is written
 to the same status file the proxy writes, so a status line that reads it keeps working.
 
 Differences from `jev-claude`: subagents keep the model they were given, the model list is
@@ -180,6 +178,11 @@ Each fresh decision appears as Codex commentary:
 
 `jev-codex` installs or refreshes the packaged `$jev-explain` skill when it starts, so it is
 available from any repository without separate setup.
+
+It also installs `$jev-codex`. `$jev-codex off` pauses routing, `$jev-codex on` resumes it, and `$jev-codex status`
+shows the setting, which `~/.jev-router-codex` stores for every `jev-codex` session. While paused,
+prompts stay on the session's last routed model, or on opus in a new session. From a terminal, run
+`jev-codex-toggle on|off|status`.
 
 Codex's footer shows `jev-router` because it displays the selected picker entry,
 not the model chosen behind that provider. If Jev is unavailable, the commentary names the
