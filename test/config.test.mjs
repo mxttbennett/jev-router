@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { availableTiers } from "../src/config.mjs";
+import { availableTiers, parseTierList } from "../src/config.mjs";
 
 test("offers every tier except fable by default", () => {
   // Arrange
@@ -54,4 +54,15 @@ test("fable stays opt-in even when JEV_ALLOWED_TIERS names it", () => {
   // Act & Assert
   assert.deepEqual(availableTiers(listed), ["sonnet"]);
   assert.deepEqual(availableTiers(allowed), ["sonnet", "fable"]);
+});
+
+test("parseTierList accepts commas and spaces and lowercases names", () => {
+  // Act & Assert
+  assert.equal(parseTierList("Haiku, sonnet  opus"), "haiku,sonnet,opus");
+});
+
+test("parseTierList rejects an empty list and any unknown tier", () => {
+  // Act & Assert
+  assert.equal(parseTierList(""), null);
+  assert.equal(parseTierList("sonnet,gpt-9"), null);
 });

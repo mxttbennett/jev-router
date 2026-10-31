@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { AUTO_MODEL } from '../src/config.mjs'
+import { AUTO_MODEL, TIER_NAMES, availableTiers, parseTierList } from '../src/config.mjs'
 
 import {
   ROUTING_DEADLINE_MS,
@@ -50,6 +50,8 @@ async function loadVars($: EngineInterface): Promise<Vars> {
     TYPESAFE_DEFAULT_MODEL: await $.env.get('TYPESAFE_DEFAULT_MODEL'),
   }
   for (const name of ENV_NAMES) if (real[name]) vars[name] = real[name]
+  const stored = await $.store.get('allowedTiers')
+  if (typeof stored === 'string' && stored) vars.JEV_ALLOWED_TIERS = stored
   return vars
 }
 
@@ -114,6 +116,10 @@ export const register: Register = on => {
       name: 'jev',
       description: 'Turn Jev model routing on or off for every session (on, off, or no argument to toggle)',
     })
+    await $.command.register({
+      name: 'jev-tiers',
+      description: 'Set the tiers Jev may route to for every session (for example haiku,sonnet,opus; reset; no argument to show)',
+    })
     return next(e)
   })
 
@@ -123,6 +129,17 @@ export const register: Register = on => {
     await $.store.set('enabled', enabled)
     if (enabled) state.isManual = false
     return { text: `Jev routing ${enabled ? 'on' : 'off'}.` }
+  })
+
+  on('command.run', { command: 'jev-tiers' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg !== '') {
+      const list = arg === 'reset' ? '' : parseTierList(arg)
+      if (list === null) return { text: `Unknown or empty tier list. Choose from ${TIER_NAMES.join(', ')}, or reset.` }
+      await $.store.set('allowedTiers', list)
+      state.vars = await loadVars($)
+    }
+    return { text: `Jev routes between ${availableTiers(state.vars).join(', ')}.` }
   })
 
   on('turn.start', async ($, e, next) => {

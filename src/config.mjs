@@ -48,6 +48,12 @@ export const availableTiers = (env = process.env) => {
   );
 };
 
+/** Normalises a typed tier list to the `JEV_ALLOWED_TIERS` form, or null when it is empty or names an unknown tier. */
+export const parseTierList = (text) => {
+  const names = String(text ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+  return names.length > 0 && names.every((name) => TIER_NAMES.includes(name)) ? names.join(",") : null;
+};
+
 export const THRESHOLDS = {
   /** Below this Jev confidence we refuse to downgrade and cap upgrades at `uncertainCeiling`. */
   minConfidence: 0.3,
