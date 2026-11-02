@@ -128,6 +128,25 @@ test("sends exact available GPT models to Jev", () => {
   ]);
 });
 
+test("keeps the newest available Codex model in each routing tier", () => {
+  const models = new Map([
+    ["o4-mini", { slug: "o4-mini", display_name: "o4 Mini" }],
+    ["gpt-6-luna", { slug: "gpt-6-luna", display_name: "GPT-6-Luna" }],
+    ["gpt-5.6-terra", { slug: "gpt-5.6-terra", display_name: "GPT-5.6-Terra" }],
+    ["gpt-6-terra", { slug: "gpt-6-terra", display_name: "GPT-6-Terra" }],
+    ["gpt-6.1-terra", { slug: "gpt-6.1-terra", display_name: "GPT-6.1-Terra" }],
+    ["gpt-6.1-omega", { slug: "gpt-6.1-omega", display_name: "GPT-6.1-Omega" }],
+    ["gpt-5.6-sol", { slug: "gpt-5.6-sol", display_name: "GPT-5.6-Sol" }],
+    ["gpt-6.1-sol", { slug: "gpt-6.1-sol", display_name: "GPT-6.1-Sol" }],
+  ]);
+
+  assert.deepEqual(codexModels(models).map(({ id, tier }) => ({ id, tier })), [
+    { id: "gpt-6-luna", tier: "haiku" },
+    { id: "gpt-6.1-terra", tier: "sonnet" },
+    { id: "gpt-6.1-sol", tier: "opus" },
+  ]);
+});
+
 test("surfaces routing as a native commentary event", () => {
   const events = jevDecisionEvents({ tier: "opus", confidence: 0.91, reason: "jev" });
   assert.match(events, /response\.output_item\.added/);

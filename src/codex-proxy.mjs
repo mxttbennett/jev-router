@@ -35,7 +35,18 @@ export function codexTierOf(model) {
   return /^gpt-/i.test(model ?? "") ? "sonnet" : null;
 }
 
-/** Exact GPT models in Codex's account catalog; configured ids are the cold-start fallback. */
+const versionOf = (model) => {
+  const match = /^gpt-(\d+)(?:\.(\d+))?/i.exec(model ?? "");
+  return match ? [Number(match[1]), Number(match[2] ?? 0)] : [0, 0];
+};
+
+const isNewer = (candidate, current) => {
+  const [candidateMajor, candidateMinor] = versionOf(candidate.id);
+  const [currentMajor, currentMinor] = versionOf(current.id);
+  return candidateMajor > currentMajor || (candidateMajor === currentMajor && candidateMinor > currentMinor);
+};
+
+/** Newest account model per Codex tier; configured ids are the cold-start fallback. */
 export function codexModels(models = new Map()) {
   const available = [...models.values()]
     .filter((model) => model.slug !== CODEX_AUTO_MODEL && model.supported_in_api !== false)
@@ -49,8 +60,13 @@ export function codexModels(models = new Map()) {
       ].filter(Boolean).join("; "),
     }))
     .filter((model) => model.tier);
-  return available.length
-    ? available
+  const newest = available.reduce((byTier, model) => {
+    const current = byTier.get(model.tier);
+    if (!current || isNewer(model, current)) byTier.set(model.tier, model);
+    return byTier;
+  }, new Map());
+  return newest.size
+    ? [...newest.values()]
     : Object.keys(DEFAULT_MODELS).map((tier) => ({
         id: codexModelOf(tier),
         tier,
