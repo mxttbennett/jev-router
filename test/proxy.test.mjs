@@ -14,14 +14,14 @@ import {
 test("only the sentinel model is routed", () => {
   assert.equal(isAuto("jev-router"), true);
   assert.equal(isAuto("claude-opus-4-6"), false, "a model the user picked is theirs");
-  assert.equal(isAuto("claude-haiku-4-5-20251001"), false, "internal Haiku calls pass through");
+  assert.equal(isAuto("claude-haiku-5-5"), false, "internal Haiku calls pass through");
   assert.equal(isAuto(undefined), false);
 });
 
 test("the sentinel is not mistaken for a real tier", () => {
   assert.equal(tierOf("jev-router"), null);
 });
-import { tierOf, isAuto } from "../src/config.mjs";
+import { tierOf, isAuto, availableTiers, idOf } from "../src/config.mjs";
 import { writeDecision, writeStatus, readStatus, pruneStale, STATUS_DIR } from "../src/status.mjs";
 import { mkdirSync, statSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -73,28 +73,15 @@ test("routing status retains the exact recent Jev exchanges", () => {
 
 test("recognises older model versions within a tier", () => {
   assert.equal(tierOf("claude-sonnet-4-6"), "sonnet");
-  assert.equal(tierOf("claude-sonnet-5"), "sonnet");
-  assert.equal(tierOf("claude-haiku-4-5-20251001"), "haiku");
+  assert.equal(tierOf("claude-sonnet-5-5"), "sonnet");
+  assert.equal(tierOf("claude-haiku-5-5"), "haiku");
   assert.equal(tierOf("claude-opus-4-1"), "opus");
   assert.equal(tierOf("claude-fable-5-1[1m]"), "fable");
   assert.equal(tierOf("gpt-9"), null);
   assert.equal(tierOf(undefined), null);
 });
 
-test("keeps available Claude model versions as separate Jev choices", () => {
-  assert.deepEqual(
-    claudeModels([
-      { id: "claude-opus-5", display_name: "Claude Opus 5" },
-      { id: "claude-opus-4-8", display_name: "Claude Opus 4.8" },
-    ]).map(({ id, tier }) => ({ id, tier })),
-    [
-      { id: "claude-opus-5", tier: "opus" },
-      { id: "claude-opus-4-8", tier: "opus" },
-    ],
-  );
-});
-
-test("Claude proxy sends exact account models to Jev and routes the chosen version", async (t) => {
+test("Claude proxy offers Jev the newest account model per tier and routes the chosen one", async (t) => {
   const seen = [];
   const upstream = http.createServer((req, res) => {
     const chunks = [];
@@ -104,9 +91,9 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({
           data: [
-            { id: "claude-opus-5", display_name: "Claude Opus 5" },
+            { id: "claude-opus-5-5", display_name: "Claude Opus 5" },
             { id: "claude-opus-4-8", display_name: "Claude Opus 4.8" },
-            { id: "claude-sonnet-5", display_name: "Claude Sonnet 5" },
+            { id: "claude-sonnet-5-5", display_name: "Claude Sonnet 5" },
           ],
         }));
       }
@@ -122,11 +109,10 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
     upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
     route: async ({ models }) => {
       assert.deepEqual(models.map((model) => model.id), [
-        "claude-opus-5",
-        "claude-opus-4-8",
-        "claude-sonnet-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
       ]);
-      return { choice: "claude-opus-4-8", confidence: 0.91, ms: 1 };
+      return { choice: "claude-sonnet-5-5", confidence: 0.91, ms: 1 };
     },
   });
   t.after(close);
@@ -142,7 +128,76 @@ test("Claude proxy sends exact account models to Jev and routes the chosen versi
     }),
   });
 
-  assert.equal(seen[0].model, "claude-opus-4-8");
+  assert.equal(seen[0].model, "claude-sonnet-5-5");
+});
+
+test("claudeModels keeps only the newest model in each tier", () => {
+  // Arrange
+  const catalog = [
+    { id: "claude-opus-4-8", created_at: "2026-02-01T00:00:00Z" },
+    { id: "claude-opus-5-5", created_at: "2026-09-01T00:00:00Z" },
+    { id: "claude-opus-5", created_at: "2026-05-01T00:00:00Z" },
+    { id: "claude-haiku-5-5", created_at: "2026-09-01T00:00:00Z" },
+    { id: "claude-haiku-4-5-20251001", created_at: "2025-10-01T00:00:00Z" },
+  ];
+
+  // Act
+  const models = claudeModels(catalog);
+
+  // Assert
+  assert.deepEqual(models.map((model) => [model.id, model.tier]), [
+    ["claude-opus-5-5", "opus"],
+    ["claude-haiku-5-5", "haiku"],
+  ]);
+});
+
+test("a failed catalog fetch falls back to static ids and retries on the next turn", async (t) => {
+  // Arrange
+  const seen = [];
+  let catalogCalls = 0;
+  const upstream = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url.startsWith("/v1/models")) {
+        if (++catalogCalls === 1) {
+          res.statusCode = 401;
+          return res.end('{"type":"error","error":{"type":"authentication_error"}}');
+        }
+        return res.end(JSON.stringify({ data: [{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5" }] }));
+      }
+      seen.push(JSON.parse(Buffer.concat(chunks)));
+      res.end('{"id":"msg_1","type":"message"}');
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+  const offered = [];
+  const { port, close } = await startProxy({
+    upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
+    route: async ({ models }) => {
+      offered.push(models.map((model) => model.id));
+      return { choice: models.find((model) => model.tier === "opus").id, confidence: 0.91, ms: 1 };
+    },
+  });
+  t.after(close);
+  const turn = (content) =>
+    fetch(`http://127.0.0.1:${port}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "test-key" },
+      body: JSON.stringify({ model: "jev-router", tools: [{ name: "Bash" }], messages: [{ role: "user", content }] }),
+    });
+
+  // Act
+  await turn(`first turn ${process.pid}`);
+  await turn(`second turn ${process.pid}`);
+
+  // Assert
+  assert.equal(catalogCalls, 2);
+  assert.deepEqual(offered[0], availableTiers().map(idOf));
+  assert.deepEqual(offered[1], ["claude-opus-5-5"]);
+  assert.deepEqual(seen.map((body) => body.model), [idOf("opus"), "claude-opus-5-5"]);
 });
 
 test("a routed request without metadata is recorded under the conversation key", async (t) => {
@@ -150,7 +205,7 @@ test("a routed request without metadata is recorded under the conversation key",
     req.on("data", () => {});
     req.on("end", () => {
       res.setHeader("content-type", "application/json");
-      res.end('{"id":"msg_1","type":"message","model":"claude-sonnet-5"}');
+      res.end('{"id":"msg_1","type":"message","model":"claude-sonnet-5-5"}');
     });
   });
   await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
@@ -158,7 +213,7 @@ test("a routed request without metadata is recorded under the conversation key",
 
   const { port, close } = await startProxy({
     upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
-    route: async () => ({ choice: "claude-sonnet-5", confidence: 0.77, ms: 1 }),
+    route: async () => ({ choice: "claude-sonnet-5-5", confidence: 0.77, ms: 1 }),
   });
   t.after(close);
 
@@ -230,6 +285,36 @@ test("ignores a tool_result continuation mid-turn", () => {
   assert.equal(newTurnPrompt(body), null);
 });
 
+test("reads the prompt past trailing system messages from hooks", () => {
+  // Arrange
+  const body = withTools([
+    { role: "user", content: [{ type: "text", text: "fix the bug" }] },
+    { role: "system", content: [{ type: "text", text: "SessionStart hook additional context" }] },
+  ]);
+
+  // Act
+  const prompt = newTurnPrompt(body);
+
+  // Assert
+  assert.equal(prompt, "fix the bug");
+});
+
+test("ignores a tool_result continuation followed by a system message", () => {
+  // Arrange
+  const body = withTools([
+    { role: "user", content: "fix the bug" },
+    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] },
+    { role: "system", content: "reminder" },
+  ]);
+
+  // Act
+  const prompt = newTurnPrompt(body);
+
+  // Assert
+  assert.equal(prompt, null);
+});
+
 test("ignores auxiliary calls that carry no tools", () => {
   const body = { messages: [{ role: "user", content: "summarise this" }] };
   assert.equal(newTurnPrompt(body), null);
@@ -265,7 +350,7 @@ test("a prompt that is only a system reminder is not a turn", () => {
   assert.equal(newTurnPrompt(body), null);
 });
 
-test("routing to haiku strips fields haiku cannot accept", () => {
+test("routing to haiku keeps thinking and effort, which Haiku 5.5 accepts", () => {
   const body = {
     model: "claude-sonnet-4-6",
     thinking: { type: "adaptive" },
@@ -273,19 +358,10 @@ test("routing to haiku strips fields haiku cannot accept", () => {
     context_management: { edits: [{ type: "clear_thinking_20251015", keep: "all" }] },
   };
   applyTier(body, "haiku");
-  assert.equal(body.model, "claude-haiku-4-5-20251001");
-  assert.equal(body.thinking, undefined);
-  assert.equal(body.output_config, undefined);
-  assert.equal(body.context_management, undefined);
-});
-
-test("routing to haiku keeps context-management strategies unrelated to thinking", () => {
-  const body = {
-    model: "claude-sonnet-4-6",
-    context_management: { edits: [{ type: "clear_tool_uses_20250919" }, { type: "clear_thinking_20251015" }] },
-  };
-  applyTier(body, "haiku");
-  assert.deepEqual(body.context_management, { edits: [{ type: "clear_tool_uses_20250919" }] });
+  assert.equal(body.model, "claude-haiku-5-5");
+  assert.deepEqual(body.thinking, { type: "adaptive" });
+  assert.deepEqual(body.output_config, { effort: "medium" });
+  assert.deepEqual(body.context_management, { edits: [{ type: "clear_thinking_20251015", keep: "all" }] });
 });
 
 test("routing to opus leaves thinking and effort intact", () => {
@@ -295,7 +371,7 @@ test("routing to opus leaves thinking and effort intact", () => {
     output_config: { effort: "medium" },
   };
   applyTier(body, "opus");
-  assert.equal(body.model, "claude-opus-5");
+  assert.equal(body.model, "claude-opus-5-5");
   assert.deepEqual(body.thinking, { type: "adaptive" });
   assert.deepEqual(body.output_config, { effort: "medium" });
 });
@@ -354,4 +430,45 @@ test("the same opening text in two sessions gets two keys", () => {
 test("the key survives metadata that is not JSON", () => {
   const body = { metadata: { user_id: "not-json" }, messages: [{ role: "user", content: "hi" }] };
   assert.doesNotThrow(() => conversationKey(body));
+});
+
+test("the catalogue is fetched once when Claude Code never asks for it", async (t) => {
+  // Arrange
+  const calls = [];
+  const upstream = http.createServer((req, res) => {
+    calls.push(req.url);
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url?.startsWith("/v1/models")) {
+        return res.end(JSON.stringify({ data: [{ id: "claude-opus-9", display_name: "Opus 9" }] }));
+      }
+      res.end('{"id":"msg_1","type":"message","model":"claude-opus-9"}');
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+
+  const seen = [];
+  const { port, close } = await startProxy({
+    upstreamURL: `http://127.0.0.1:${upstream.address().port}`,
+    route: async ({ models }) => {
+      seen.push(models.map((model) => model.id));
+      return null;
+    },
+  });
+  t.after(close);
+
+  // Act
+  for (const turn of ["first turn", "second turn"]) {
+    await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer t" },
+      body: JSON.stringify({ model: "jev-router", tools: [{ name: "Bash" }], messages: [{ role: "user", content: turn }] }),
+    });
+  }
+
+  // Assert
+  assert.deepEqual(seen, [["claude-opus-9"], ["claude-opus-9"]], "catalogue ids route both turns");
+  assert.equal(calls.filter((url) => url?.startsWith("/v1/models")).length, 1, "fetched once");
 });

@@ -1,5 +1,4 @@
 // Every routing decision knob lives here, so the whole policy is reviewable in one file.
-import { choice, score } from "@typesafe-ai/sdk";
 
 /**
  * Model tiers, cheapest first. `id` is what goes into the API request body; `family` is the
@@ -9,9 +8,9 @@ import { choice, score } from "@typesafe-ai/sdk";
  * those fields have to be stripped when routing down to it.
  */
 export const TIERS = [
-  { name: "haiku", id: "claude-haiku-4-5-20251001", family: "haiku", thinking: false, effort: false },
-  { name: "sonnet", id: "claude-sonnet-5", family: "sonnet", thinking: true, effort: true },
-  { name: "opus", id: "claude-opus-5", family: "opus", thinking: true, effort: true },
+  { name: "haiku", id: "claude-haiku-5-5", family: "haiku", thinking: true, effort: true },
+  { name: "sonnet", id: "claude-sonnet-5-5", family: "sonnet", thinking: true, effort: true },
+  { name: "opus", id: "claude-opus-5-5", family: "opus", thinking: true, effort: true },
   { name: "fable", id: "claude-fable-5-1", family: "fable", thinking: true, effort: true },
 ];
 
@@ -38,12 +37,22 @@ export const isAuto = (model) => model === AUTO_MODEL;
 export const tierOf = (model) =>
   TIERS.find((t) => typeof model === "string" && model.includes(t.family))?.name ?? null;
 
-/**
- * Fable bills extra usage credits, so it is opt-in. Everything else is covered by a normal
- * subscription.
- */
-export const availableTiers = () =>
-  TIER_NAMES.filter((n) => n !== "fable" || process.env.JEV_ALLOW_FABLE === "1");
+/** Tiers the account may route to. JEV_ALLOWED_TIERS narrows the list; fable stays opt-in because it bills extra credits. */
+export const availableTiers = (env = process.env) => {
+  const named = (env.JEV_ALLOWED_TIERS ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => TIER_NAMES.includes(name));
+  return TIER_NAMES.filter(
+    (n) => (named.length === 0 || named.includes(n)) && (n !== "fable" || env.JEV_ALLOW_FABLE === "1"),
+  );
+};
+
+/** Normalises a typed tier list to the `JEV_ALLOWED_TIERS` form, or null when it is empty or names an unknown tier. */
+export const parseTierList = (text) => {
+  const names = String(text ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+  return names.length > 0 && names.every((name) => TIER_NAMES.includes(name)) ? names.join(",") : null;
+};
 
 export const THRESHOLDS = {
   /** Below this Jev confidence we refuse to downgrade and cap upgrades at `uncertainCeiling`. */
@@ -52,19 +61,25 @@ export const THRESHOLDS = {
   uncertainCeiling: "sonnet",
   /**
    * Switching models invalidates the prompt cache; the next turn re-sends the whole
-   * conversation. Measured at ~23.6k cache-creation tokens switching into Opus, so a
-   * downgrade only pays off while the conversation is still small.
+   * conversation. Measured at ~23.6k cache-creation tokens switching into Opus. Sessions
+   * start near 90k from injected context, so the cap sits well above that baseline.
    */
-  downgradeMaxContextTokens: 20000,
+  downgradeMaxContextTokens: 150000,
   /**
    * Per-attempt Jev HTTP timeout and the hard wall-clock deadline for the whole routing
    * call. Measured: ~300-350ms warm, ~900-1000ms on the first call (TLS handshake), so the
    * deadline leaves room for one retry after a cold-start timeout.
    */
   jevTimeoutMs: 1500,
+  /** One-shot model catalogue fetch; the static ids cover a slow or failed lookup. */
+  catalogTimeoutMs: 2000,
   jevDeadlineMs: 3000,
   jevMaxRetries: 1,
 };
+
+// The SDK's question builders, inlined so this file loads where npm packages cannot (the mod).
+const score = (instructions, criteria) => ({ type: "score", instructions, criteria });
+const choice = (instructions, criteria) => ({ type: "choice", instructions, criteria });
 
 export const CONTEXT_WINDOW_TOKENS = 200000;
 
@@ -140,7 +155,7 @@ export const questionForModels = (models) =>
   choice(
     [
       "Pick the cheapest exact model that can fully complete this coding request in one pass, without retrying on a stronger model.",
-      "Treat different model versions as separate choices. Judge required reasoning, not requested reply length.",
+      "Judge required reasoning, not requested reply length.",
     ],
     Object.fromEntries(
       models.map(({ id, tier, description }) => [

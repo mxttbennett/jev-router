@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import {
   TIERS,
+  THRESHOLDS,
   tierOf,
   idOf,
   availableTiers,
@@ -54,7 +55,8 @@ export function sanitizeSchema(node) {
  */
 export function newTurnPrompt(body) {
   if (!Array.isArray(body?.tools) || body.tools.length === 0) return null; // auxiliary call
-  const last = body?.messages?.[body.messages.length - 1];
+  // Claude Code appends hook context as trailing system messages after the user's turn.
+  const last = body?.messages?.findLast?.((m) => m?.role !== "system");
   if (!last || last.role !== "user") return null;
   let text;
   if (typeof last.content === "string") {
@@ -97,10 +99,16 @@ export function applyTier(body, tierName, model = idOf(tierName)) {
   return body;
 }
 
-/** Exact Claude models reported by the account, newest first; static ids are the cold-start fallback. */
+/**
+ * The newest Claude model the account reports in each tier; static ids are the cold-start
+ * fallback. Older versions are dropped rather than offered, since Jev would otherwise route to them.
+ */
 export function claudeModels(catalog = []) {
+  const seen = new Set();
   const models = catalog
     .filter((model) => tierOf(model?.id))
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+    .filter((model) => !seen.has(tierOf(model.id)) && seen.add(tierOf(model.id)))
     .map((model) => ({
       id: model.id,
       tier: tierOf(model.id),
@@ -172,6 +180,34 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
   // by the cache-rebuild guard, which needs to know what the prompt cache was built on.
   const convos = new Map();
   const catalog = new Map();
+
+  // Claude Code only asks for /v1/models when something needs the list, which can be never,
+  // so without this the static ids route the whole session. Fetched off the first request's
+  // own credentials; a failure keeps the static ids for that turn and retries on the next.
+  let catalogFetch = null;
+  const ensureCatalog = (reqHeaders) => {
+    if (catalog.size) return Promise.resolve();
+    catalogFetch ??= (async () => {
+      const headers = { "anthropic-version": "2023-06-01" };
+      for (const name of ["authorization", "x-api-key", "anthropic-beta", "user-agent"]) {
+        if (reqHeaders[name]) headers[name] = reqHeaders[name];
+      }
+      try {
+        const res = await fetch(`${String(upstreamURL).replace(/\/$/, "")}/v1/models?limit=100`, {
+          headers,
+          signal: AbortSignal.timeout(THRESHOLDS.catalogTimeoutMs),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        for (const model of (await res.json()).data ?? []) {
+          if (tierOf(model?.id)) catalog.set(model.id, model);
+        }
+        debug(`catalog: ${[...catalog.keys()].join(", ") || "no Claude models listed"}`);
+      } catch (err) {
+        debug(`catalog fetch failed, using static ids: ${err.message}`);
+      }
+    })().finally(() => (catalogFetch = null));
+    return catalogFetch;
+  };
   const stateFor = (key) => {
     let s = convos.get(key);
     if (!s) {
@@ -218,6 +254,7 @@ export async function startProxy({ upstreamURL = ANTHROPIC_BASE_URL, route = ask
             const explaining = prompt?.includes("<jev-explain>");
             let fresh = null;
             if (prompt && !explaining) {
+              await ensureCatalog(req.headers);
               const models = claudeModels([...catalog.values()]).filter((model) =>
                 availableTiers().includes(model.tier),
               );
